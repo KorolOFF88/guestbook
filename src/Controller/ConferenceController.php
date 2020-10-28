@@ -14,9 +14,23 @@ use Twig\Environment;
 class ConferenceController extends AbstractController
 {
     /**
+     * @var Environment $twig
+     */
+    private $_twig;
+
+    /**
+     * ConferenceController constructor.
+     *
+     * @param Environment $twig
+     */
+    public function __construct(Environment $twig)
+    {
+        $this->_twig = $twig;
+    }
+
+    /**
      * @Route("/", name="homepage")
      *
-     * @param Environment          $twig
      * @param ConferenceRepository $conferenceRepository
      *
      * @return Response
@@ -24,9 +38,9 @@ class ConferenceController extends AbstractController
      * @throws \Twig\Error\RuntimeError
      * @throws \Twig\Error\SyntaxError
      */
-    public function index(Environment $twig, ConferenceRepository $conferenceRepository): Response
+    public function index(ConferenceRepository $conferenceRepository): Response
     {
-        return new Response($twig->render('conference/index.html.twig', [
+        return new Response($this->_twig->render('conference/index.html.twig', [
             'conferences' => $conferenceRepository->findAll(),
         ]));
     }
@@ -35,7 +49,6 @@ class ConferenceController extends AbstractController
      * @Route("/conference/{id}", name="conference")
      *
      * @param Request           $request
-     * @param Environment       $twig
      * @param Conference        $conference
      * @param CommentRepository $commentRepository
      *
@@ -44,17 +57,12 @@ class ConferenceController extends AbstractController
      * @throws \Twig\Error\RuntimeError
      * @throws \Twig\Error\SyntaxError
      */
-    public function show(
-        Request $request,
-        Environment $twig,
-        Conference $conference,
-        CommentRepository $commentRepository
-    ): Response
+    public function show(Request $request, Conference $conference, CommentRepository $commentRepository): Response
     {
         $offset = max(0, $request->query->getInt('offset', 0));
         $paginator = $commentRepository->getCommentPaginator($conference, $offset);
 
-        return new Response($twig->render('conference/show.html.twig', [
+        return new Response($this->_twig->render('conference/show.html.twig', [
             'conference' => $conference,
             'comments'   => $paginator,
             'prev'       => $offset - CommentRepository::PAGINATOR_PER_PAGE,
