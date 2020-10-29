@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Entity\{Conference, Comment};
 use App\Repository\{CommentRepository, ConferenceRepository};
+use App\SpamChecker;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\{Request, Response};
@@ -59,8 +60,14 @@ class ConferenceController extends AbstractController
      * @param Request           $request
      * @param Conference        $conference
      * @param CommentRepository $commentRepository
+     * @param SpamChecker       $spamChecker
+     * @param string            $photoDir
      *
      * @return Response
+     * @throws \Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface
+     * @throws \Symfony\Contracts\HttpClient\Exception\RedirectionExceptionInterface
+     * @throws \Symfony\Contracts\HttpClient\Exception\ServerExceptionInterface
+     * @throws \Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface
      * @throws \Twig\Error\LoaderError
      * @throws \Twig\Error\RuntimeError
      * @throws \Twig\Error\SyntaxError
@@ -69,6 +76,7 @@ class ConferenceController extends AbstractController
         Request $request,
         Conference $conference,
         CommentRepository $commentRepository,
+        SpamChecker $spamChecker,
         string $photoDir
     ): Response
     {
@@ -89,6 +97,16 @@ class ConferenceController extends AbstractController
             }
 
             $this->_entityManager->persist($comment);
+            // Check comment
+            $context = [
+                'user_ip' => $request->getClientIp(),
+                'user_agent' => $request->headers->get('user-agent'),
+                'referrer' => $request->headers->get('referer'),
+                'permalink' => $request->getUri(),
+            ];
+            if (2 === $spamChecker->getSpamScore($comment, $context)) {
+                throw new \RuntimeException('Blatant spam, go away!');
+            }
             $this->_entityManager->flush();
 
             return $this->redirectToRoute('conference', [ 'slug' => $conference->getSlug() ]);
