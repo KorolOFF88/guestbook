@@ -2,13 +2,14 @@
 
 namespace App\Controller;
 
-use App\Entity\Conference;
-use App\Repository\CommentRepository;
+use App\Entity\{Conference, Comment};
+use App\Repository\{CommentRepository, ConferenceRepository};
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\File\Exception\FileException;
+use Symfony\Component\HttpFoundation\{Request, Response};
 use Symfony\Component\Routing\Annotation\Route;
-use Symfony\Component\HttpFoundation\Response;
-use App\Repository\ConferenceRepository;
+use Doctrine\ORM\EntityManagerInterface;
+use App\Form\CommentFormType;
 use Twig\Environment;
 
 class ConferenceController extends AbstractController
@@ -19,13 +20,20 @@ class ConferenceController extends AbstractController
     private $_twig;
 
     /**
+     * @var EntityManagerInterface
+     */
+    private $_entityManager;
+
+    /**
      * ConferenceController constructor.
      *
-     * @param Environment $twig
+     * @param Environment            $twig
+     * @param EntityManagerInterface $entityManager
      */
-    public function __construct(Environment $twig)
+    public function __construct(Environment $twig, EntityManagerInterface $entityManager)
     {
-        $this->_twig = $twig;
+        $this->_twig          = $twig;
+        $this->_entityManager = $entityManager;
     }
 
     /**
@@ -57,8 +65,35 @@ class ConferenceController extends AbstractController
      * @throws \Twig\Error\RuntimeError
      * @throws \Twig\Error\SyntaxError
      */
-    public function show(Request $request, Conference $conference, CommentRepository $commentRepository): Response
+    public function show(
+        Request $request,
+        Conference $conference,
+        CommentRepository $commentRepository,
+        string $photoDir
+    ): Response
     {
+        $comment = new Comment();
+        $form    = $this->createForm(CommentFormType::class, $comment);
+        $form->handleRequest($request);
+        if ($form->isSubmitted() and $form->isValid()) {
+            $comment->setConference($conference);
+            // Upload image
+            if ($photo = $form['photo']->getData()) {
+                $filename = bin2hex(random_bytes(6)) . '.' . $photo->guessExtension();
+                try {
+                    $photo->move($photoDir, $filename);
+                } catch (FileException $exception) {
+                    // unable to upload the photo, give up
+                }
+                $comment->setPhotoFilename($filename);
+            }
+
+            $this->_entityManager->persist($comment);
+            $this->_entityManager->flush();
+
+            return $this->redirectToRoute('conference', [ 'slug' => $conference->getSlug() ]);
+        }
+
         $offset = max(0, $request->query->getInt('offset', 0));
         $paginator = $commentRepository->getCommentPaginator($conference, $offset);
 
@@ -67,6 +102,7 @@ class ConferenceController extends AbstractController
             'comments'   => $paginator,
             'prev'       => $offset - CommentRepository::PAGINATOR_PER_PAGE,
             'next'       => min(count($paginator), $offset + CommentRepository::PAGINATOR_PER_PAGE),
+            'comment_form' => $form->createView(),
         ]));
     }
 }
