@@ -53,7 +53,16 @@ class AppFixtures extends Fixture
         $comment1->setAuthor('Korolev Vladimir');
         $comment1->setEmail('koroloff@list.ru');
         $comment1->setText('Test comment message');
+        $comment1->setState('published');
         $manager->persist($comment1);
+
+        $comment2 = new Comment();
+        $comment2->setConference($spb);
+        $comment2->setAuthor('Korolev2 Vladimir2');
+        $comment2->setEmail('koroloff@list.ru');
+        $comment2->setText('Test comment message 2');
+        $comment2->setState('published');
+        $manager->persist($comment2);
 
         // Add users
 
