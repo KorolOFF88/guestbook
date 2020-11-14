@@ -4,12 +4,13 @@ namespace App\Controller;
 
 use App\Entity\{Conference, Comment};
 use App\Repository\{CommentRepository, ConferenceRepository};
-use App\SpamChecker;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\{Request, Response};
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Annotation\Route;
 use Doctrine\ORM\EntityManagerInterface;
+use App\Message\CommentMessage;
 use App\Form\CommentFormType;
 use Twig\Environment;
 
@@ -25,14 +26,17 @@ class ConferenceController extends AbstractController
      */
     private $_entityManager;
 
+    private $_bus;
+
     /**
      * ConferenceController constructor.
      *
      * @param Environment            $twig
      * @param EntityManagerInterface $entityManager
      */
-    public function __construct(Environment $twig, EntityManagerInterface $entityManager)
+    public function __construct(Environment $twig, EntityManagerInterface $entityManager, MessageBusInterface $bus)
     {
+        $this->_bus           = $bus;
         $this->_twig          = $twig;
         $this->_entityManager = $entityManager;
     }
@@ -56,27 +60,12 @@ class ConferenceController extends AbstractController
 
     /**
      * @Route("/conference/{slug}", name="conference")
-     *
-     * @param Request           $request
-     * @param Conference        $conference
-     * @param CommentRepository $commentRepository
-     * @param SpamChecker       $spamChecker
-     * @param string            $photoDir
-     *
-     * @return Response
-     * @throws \Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface
-     * @throws \Symfony\Contracts\HttpClient\Exception\RedirectionExceptionInterface
-     * @throws \Symfony\Contracts\HttpClient\Exception\ServerExceptionInterface
-     * @throws \Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface
-     * @throws \Twig\Error\LoaderError
-     * @throws \Twig\Error\RuntimeError
-     * @throws \Twig\Error\SyntaxError
      */
+
     public function show(
         Request $request,
         Conference $conference,
         CommentRepository $commentRepository,
-        SpamChecker $spamChecker,
         string $photoDir
     ): Response
     {
@@ -97,6 +86,8 @@ class ConferenceController extends AbstractController
             }
 
             $this->_entityManager->persist($comment);
+            $this->_entityManager->flush();
+
             // Check comment
             $context = [
                 'user_ip' => $request->getClientIp(),
@@ -104,10 +95,9 @@ class ConferenceController extends AbstractController
                 'referrer' => $request->headers->get('referer'),
                 'permalink' => $request->getUri(),
             ];
-            if (2 === $spamChecker->getSpamScore($comment, $context)) {
-                throw new \RuntimeException('Blatant spam, go away!');
-            }
-            $this->_entityManager->flush();
+
+            // Send message for Spam check
+            $this->_bus->dispatch(new CommentMessage($comment->getId(), $context));
 
             return $this->redirectToRoute('conference', [ 'slug' => $conference->getSlug() ]);
         }
